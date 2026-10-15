@@ -153,3 +153,7 @@ const result = await directClient.verify({
 ```sh
 npm test
 ```
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
