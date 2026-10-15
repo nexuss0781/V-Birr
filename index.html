@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7f4">
+  <meta name="description" content="V-Birr organization payment verification workspace.">
+  <title>V-Birr — Verification workspace</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="V-Birr home"><span class="brand-mark">V</span><span>V-Birr</span></a>
+      <div class="topbar-right">
+        <span class="workspace-label">Organization workspace</span>
+        <span class="health" id="health"><i></i><span>Checking service</span></span>
+        <details class="connection-menu">
+          <summary><span class="key-icon">⌑</span> Connection</summary>
+          <div class="connection-card">
+            <label for="projectSecret">V-Birr verification key</label>
+            <input id="projectSecret" type="password" autocomplete="off" placeholder="Paste the V-Birr project secret">
+            <p>Used for requests from this workspace and kept in this browser tab session only.</p>
+            <button class="button button-dark button-small" id="saveSecret" type="button">Save for this session</button>
+          </div>
+        </details>
+      </div>
+    </header>
+
+    <div class="notice" role="note">
+      <span class="notice-icon">i</span>
+      <div><strong>Workspace preview</strong><span>Projects and review records are stored in this browser only. Use an authenticated, server-backed workspace before processing production customer data.</span></div>
+      <button id="dismissNotice" class="notice-close" type="button" aria-label="Dismiss notice">×</button>
+    </div>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="nav-label">WORKSPACE</div>
+        <button class="nav-item active" data-view="overview"><span class="nav-symbol">◫</span> Overview</button>
+        <button class="nav-item" data-view="projects"><span class="nav-symbol">▦</span> Projects</button>
+        <button class="nav-item" data-view="payers"><span class="nav-symbol">♧</span> Payer accounts</button>
+        <div class="nav-label nav-label-spaced">OPERATIONS</div>
+        <button class="nav-item" data-view="verify"><span class="nav-symbol">＋</span> Verify payment</button>
+        <button class="nav-item" data-view="reviews"><span class="nav-symbol">⚑</span> Review queue <span class="nav-count" id="reviewCount">0</span></button>
+        <button class="nav-item" data-view="activity"><span class="nav-symbol">↻</span> Activity</button>
+        <div class="sidebar-bottom"><span class="sidebar-lock">⌑</span><strong>Two-account checks</strong><p>A payment is verified only when the receipt matches both the project's receiving account and the sender account.</p></div>
+      </aside>
+
+      <main id="main" class="main" tabindex="-1"></main>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

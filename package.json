@@ -1,0 +1,23 @@
+{
+  "name": "vbirr-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build && node scripts/copy-ocr-assets.mjs && node scripts/sync-cloudflare-assets.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test sdk/test/*.js"
+  },
+  "dependencies": {
+    "@tesseract.js-data/amh": "^1.0.0",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "tesseract.js": "^6.0.1"
+  },
+  "devDependencies": {
+    "vite": "^7.3.0"
+  }
+}
