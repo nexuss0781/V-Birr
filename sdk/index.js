@@ -2,6 +2,7 @@ const VERIFY_ENDPOINT = "https://links.et/api/verify";
 const MAX_IMAGE_BASE64_LENGTH = 5 * 1024 * 1024;
 import { chooseReceiptLocator } from "./receipt-locator.js";
 import { readReceiptLocators } from "./local-ocr.js";
+export { VBirrApiError, VBirrClient } from "./client.js";
 
 const ACCOUNT_FIELDS = Object.freeze({
   "telebirr-html": {

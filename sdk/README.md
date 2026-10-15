@@ -1,17 +1,14 @@
 # V-Birr JavaScript SDK
 
-A small, server-side JavaScript client for checking whether a receipt's sender and receiver accounts match the values your application expects.
+A server-side JavaScript SDK for creating organization projects, registering payer accounts, and validating receipt transactions against account details.
 
-**Verification only:** the SDK reads and checks an existing receipt. It does not initiate, submit, or authorize a payment.
+**Verification only:** the SDK checks existing receipts. It does not initiate, submit, or authorize payments. Keep all V-Birr credentials on a trusted server; never use either client in browser code or a mobile app bundle.
 
 ## Requirements
 
 - Node.js 18 or newer
-- A V-Birr verification token stored in a server-side environment variable
-- A receipt URL or supported reference, or a screenshot as base64 for local OCR
-- The expected sender and fixed receiving account identifiers
-
-Never put the token in browser code, a mobile app bundle, source control, logs, or a client-visible response. Screenshots passed to `verifyImage` are OCR'd in memory by the SDK and are not uploaded to Links.et or written to disk. Only a uniquely extracted receipt URL/reference is sent to the verification endpoint.
+- A V-Birr API base URL
+- A V-Birr project secret stored in a server-side environment variable
 
 ## Install
 
@@ -21,101 +18,137 @@ From this directory:
 npm install
 ```
 
-## Verify a receipt URL or reference
+## Create a project and register a payer
 
 ```js
-import { VBirrVerificationClient } from "vbirr-verification-sdk";
+import { VBirrClient } from "v-birr";
 
-const vbirr = new VBirrVerificationClient({
-  token: process.env.VBIRR_VERIFICATION_TOKEN
+const vbirr = new VBirrClient({
+  baseUrl: process.env.VBIRR_API_BASE_URL,
+  projectSecret: process.env.VBIRR_PROJECT_SECRET
 });
 
+const project = await vbirr.createProject({
+  organization: "Example Trading PLC",
+  name: "Monthly collections",
+  accountType: "CBE",
+  baseAccount: "0987652314"
+});
+
+await vbirr.addPayer({
+  projectId: project.id,
+  name: "Payer One",
+  accountNumber: "0912792308"
+});
+```
+
+Project creation saves the fixed receiving `baseAccount` in V-Birr's authenticated server workspace. `addPayer` registers a full sender account for that project. These are SDK operations and do not require the frontend.
+
+## Generic transaction verification
+
+For a one-off or generic integration, supply both account numbers and exactly one receipt URL, reference, or transaction number. `transactionNumber` is an alias for `reference`.
+
+```js
 const result = await vbirr.verify({
-  sender: process.env.EXPECTED_SENDER_ACCOUNT,
-  receiver: process.env.FIXED_RECEIVING_ACCOUNT,
-  receiptUrl: process.env.RECEIPT_URL
-  // Or use `reference` instead of `receiptUrl`.
+  baseAccount: "0987652314",
+  clientAccount: "0912792308",
+  transactionNumber: "TX-001234"
 });
 
 if (result.success) {
-  // true only when both account identifiers matched the verified receipt
-  await fulfillOrder();
+  // Both receipt accounts matched.
+  console.log(result.receipt, result.accountChecks, result.fetchedAt);
 } else {
-  // failed and inconclusive outcomes must go to review, never auto-fulfill
+  // Do not treat mismatches, inconclusive results, or review states as verified.
   await queueForAdminReview({ result });
 }
 ```
 
-## Verify a screenshot without uploading it
+## Project-bound transaction verification
 
-Pass the screenshot's raw base64 string or a `data:image/...;base64,` data URL. The SDK strips the prefix, decodes the image, reads it locally in memory, clears the temporary buffer, and terminates the OCR worker. No screenshot bytes are sent to V-Birr or Links.et. Images must be no larger than 5 MB encoded.
+After creating a project, validate a user's full account number and transaction number against the project's fixed receiving account and payer directory:
 
 ```js
-const result = await vbirr.verifyImage({
-  sender: process.env.EXPECTED_SENDER_ACCOUNT,
-  receiver: process.env.FIXED_RECEIVING_ACCOUNT,
-  imageBase64: screenshotBase64,
-  idempotencyKey: paymentId
+const result = await vbirr.verifyProject({
+  projectId: project.id,
+  clientAccount: "0912792308",
+  transactionNumber: "TX-001234"
 });
 
 if (result.success) {
-  await fulfillOrder();
-} else {
-  // Includes the exact parsed provider response when one was received.
-  await queueForAdminReview({
-    result,
-    providerResponse: result.providerResponse ?? null
-  });
+  // Receipt accounts match and the payer is registered to this project.
+} else if (result.status === "needs_review") {
+  // The sender is not registered; require manual review instead of auto-approval.
+  await queueForAdminReview({ result });
 }
 ```
 
-The screenshot parser is not itself proof of payment. `success` becomes true only after Links.et verifies the extracted receipt and both account identifiers match. If no unique URL/reference is found, the result is inconclusive and includes only locator candidates for manual selection; OCR text and screenshot data are not returned.
+The receiving account is loaded from the server-side project and cannot be replaced in a project-bound check. The result includes the receipt summary, account checks, decision, project registration status, fetch time, and the provider response returned by the authenticated V-Birr API. These fields may contain sensitive transaction information; store and log them accordingly.
 
-## Result
+## Result shape
 
 ```js
 {
   success: true,
-  status: "verified", // "failed" or "inconclusive" otherwise
-  message: "V-Birr verified that both accounts match the receipt.",
-  checks: {
-    sender: "matched",
-    receiver: "matched"
-  }
+  status: "matched", // also "needs_review", "mismatch", "inconclusive", or "failed"
+  receipt: { source: "cbe-pdf", amount: 50, currency: "ETB" },
+  accountChecks: {
+    sender: { status: "matched", field: "payerAccount" },
+    recipient: { status: "matched", field: "receiverAccount" }
+  },
+  decision: { status: "matched", grant: true },
+  project: null,
+  fetchedAt: "2026-10-15T00:00:00Z",
+  providerResponse: { /* receipt details returned by V-Birr */ },
+  error: null
 }
 ```
 
-- `success: true` only when both account identifiers are present and exactly match.
-- `status: "failed"` means verification failed or at least one account mismatched.
-- `status: "inconclusive"` means an account was masked, missing, or unavailable in the receipt format, or OCR did not find a unique usable URL/reference.
-- If `success` is false for any reason, do not mark the payment as verified.
+`success` is true only when V-Birr's decision explicitly grants validation. An unregistered project payer can return `needs_review` even if the receipt's account numbers match. Masked, missing, or unavailable account numbers are never treated as matches.
 
-Account comparisons ignore punctuation and compare digits. Masked account numbers are never accepted as a match. The SDK does not retry automatically.
+## SDK methods and options
 
-## Options
+```js
+new VBirrClient({ baseUrl, projectSecret, fetchImpl, timeoutMs, idFactory })
+```
 
-`new VBirrVerificationClient({ token, fetchImpl, timeoutMs })`
+- `baseUrl` (required): V-Birr API deployment URL. HTTPS is required; HTTP is allowed only for localhost development.
+- `projectSecret` (required): server-side V-Birr project/admin secret.
+- `fetchImpl` (optional): Fetch-compatible function, useful for tests.
+- `timeoutMs` (optional): request timeout; defaults to 30 seconds.
+- `idFactory` (optional): project/payer ID factory; defaults to `crypto.randomUUID`.
 
-- `token` (required): server-side verification credential.
-- `fetchImpl` (optional): Fetch-compatible function, useful for testing.
-- `timeoutMs` (optional): request timeout; defaults to 130,000 ms.
+Methods:
 
-`verify({ sender, receiver, receiptUrl, reference, idempotencyKey, signal })`
+- `createProject({ organization, name, accountType, baseAccount, id, createdAt, signal })`
+- `addPayer({ projectId, name, accountNumber, id, createdAt, signal })`
+- `getWorkspace({ signal })`
+- `verify({ baseAccount, clientAccount, receiptUrl, reference, transactionNumber, idempotencyKey, signal })`
+- `verifyProject({ projectId, clientAccount, receiptUrl, reference, transactionNumber, idempotencyKey, signal })`
 
-- `sender`, `receiver` (required): expected account identifiers.
-- `receiptUrl` or `reference` (required): provide exactly one.
-- `idempotencyKey` (optional): safe retry key supplied by your application.
-- `signal` (optional): `AbortSignal` for caller-controlled cancellation.
+The project and payer methods update the existing workspace using a read-modify-write request. Coordinate simultaneous workspace mutations across separate processes to avoid overwriting updates.
 
-`verifyImage({ sender, receiver, imageBase64, idempotencyKey, signal })`
+## Direct verification and local screenshot OCR
 
-- `sender`, `receiver` (required): expected account identifiers.
-- `imageBase64` (required): a screenshot's raw base64 string or image data URL, no larger than 5 MB encoded. OCR is local; only an extracted locator may be sent to Links.et.
-- `idempotencyKey` (optional): safe retry key supplied by your application.
-- `signal` (optional): `AbortSignal` for caller-controlled cancellation.
-- For ambiguous OCR, `referenceCandidates` contains extracted URLs/references for manual review; raw OCR text and image data are not returned.
+The legacy `VBirrVerificationClient` is also exported for direct receipt checks and local screenshot OCR:
 
-## Test
+```js
+import { VBirrVerificationClient } from "v-birr";
+
+const directClient = new VBirrVerificationClient({
+  token: process.env.VBIRR_VERIFICATION_TOKEN
+});
+
+const result = await directClient.verify({
+  sender: "0912792308",
+  receiver: "0987652314",
+  reference: "TX-001234"
+});
+```
+
+`verifyImage({ sender, receiver, imageBase64, idempotencyKey, signal })` reads a screenshot locally in memory. The screenshot is not uploaded or written to disk. The image must be no larger than 5 MB encoded; OCR must find one unique receipt URL/reference before verification proceeds. Ambiguous candidates are returned for manual selection; raw OCR text and image data are not returned.
+
+## Tests
 
 ```sh
 npm test
